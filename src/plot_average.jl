@@ -96,6 +96,34 @@ function _read_two_col_csv(filename::AbstractString)
     return xs, ys
 end
 
+function _linear_interp(xs::Vector{Float64}, ys::Vector{Float64}, xt::Vector{Float64})
+    # Simple linear interpolation: xs may be unsorted; returns values at xt.
+    if length(xs) != length(ys) || isempty(xs)
+        return Float64[]
+    end
+    order = sortperm(xs)
+    xs_s = xs[order]
+    ys_s = ys[order]
+    n = length(xt)
+    out = Vector{Float64}(undef, n)
+    for i in 1:n
+        x = xt[i]
+        if x <= xs_s[1]
+            out[i] = ys_s[1]
+        elseif x >= xs_s[end]
+            out[i] = ys_s[end]
+        else
+            j = searchsortedfirst(xs_s, x)
+            # xs_s[j-1] < x <= xs_s[j]
+            x0 = xs_s[j-1]; x1 = xs_s[j]
+            y0 = ys_s[j-1]; y1 = ys_s[j]
+            t = (x - x0) / (x1 - x0)
+            out[i] = y0 + t * (y1 - y0)
+        end
+    end
+    return out
+end
+
 """
 Plot two CSV files (two columns x, y) on the same axes and save image.
 If grids differ the second series is interpolated onto the first grid.
@@ -141,7 +169,7 @@ function plot_pair_csv(file1::AbstractString, file2::AbstractString; label1::Abs
     xlabel!(p, "X")
     ylabel!(p, "|Ψ|")
     title!(p, "$(basename(file1)) vs $(basename(file2))")
-    grid!(p, true)
+    plot!(p, grid=true)
     savefig(p, out)
     println("Saved comparison plot to $out")
     return out
