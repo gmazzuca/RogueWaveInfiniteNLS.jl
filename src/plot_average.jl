@@ -127,6 +127,7 @@ end
 """
 Plot two CSV files (two columns x, y) on the same axes and save image.
 If grids differ the second series is interpolated onto the first grid.
+Also computes the absolute difference between the two series, produces a log10 difference plot, and saves it.
 Example:
   plot_pair_csv("PIII_avg_5trials.csv", "RHP_PIII.csv")
 """
@@ -164,6 +165,7 @@ function plot_pair_csv(file1::AbstractString, file2::AbstractString; label1::Abs
         out = replace(out, r"\.csv$" => ".png")
     end
 
+    # Overlay plot
     p = plot(xs1s, ys1s, label=lbl1, linewidth=2)
     plot!(xs1s, ys2_on_1, label=lbl2, color=style2[1], linestyle=style2[2], linewidth=2)
     xlabel!(p, "X")
@@ -172,5 +174,39 @@ function plot_pair_csv(file1::AbstractString, file2::AbstractString; label1::Abs
     plot!(p, grid=true)
     savefig(p, out)
     println("Saved comparison plot to $out")
-    return out
+
+    # Difference (absolute) and log10-difference plot
+    delta = abs.(ys1s .- ys2_on_1)
+    # Avoid log10(0): set small floor relative to max delta or absolute eps
+    floor = 1e-16
+    # if there are positive deltas, pick a floor smaller than their minimum but not too small
+    pos = delta[delta .> 0.0]
+    if !isempty(pos)
+        floor = min(floor, minimum(pos) * 1e-2)
+        # ensure floor is at least machine eps
+        floor = max(floor, eps(Float64))
+    else
+        floor = eps(Float64)
+    end
+    delta_clamped = clamp.(delta, floor, Inf)
+    logdelta = log10.(delta_clamped)
+
+    # Build diff output filename: same dir as `out`, prefixed with 'difference_'
+    out_dir = dirname(out)
+    out_base = basename(out)
+    diff_out = joinpath(out_dir, "difference_" * out_base)
+
+    q = plot(xs1s, logdelta,
+        linewidth=2,
+        xlabel = "X",
+        ylabel = "log10(|Δ|)",
+        title = "log10 absolute difference: $(basename(file1)) vs $(basename(file2))",
+        legend = false,
+        grid = true,
+        size = (900, 500)
+    )
+    savefig(q, diff_out)
+    println("Saved log-difference plot to $diff_out")
+
+    return out, diff_out
 end

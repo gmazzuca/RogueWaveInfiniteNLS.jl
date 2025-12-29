@@ -437,13 +437,97 @@ function run_trials_and_average(dataset::String, K::Int, N_soliton::Int; nu::Int
     return out_filename
 end
 
+function average_files_by_basename(basename::String; dir::AbstractString=".", out_filename::AbstractString="")
+    """Find CSV files in `dir` whose filename starts with `basename`, average their
+    second-column amplitudes (interpolating to a common x-grid if necessary) and
+    write the result to `out_filename` (defaults to `joinpath(dir, basename * "averaged.csv")`).
+    Returns the output filename."""
+
+    files = sort(filter(f -> startswith(f, basename) && endswith(lowercase(f), ".csv"), readdir(dir)))
+    if isempty(files)
+        error("No files matching basename='$basename' in dir='$dir'")
+    end
+
+    x_ref = nothing
+    amp_matrix = Array{Float64,2}(undef, 0, 0)
+
+    for f in files
+        path = joinpath(dir, f)
+        lines = readlines(path)
+        xs = Float64[]
+        ys = Float64[]
+        if isempty(lines)
+            @warn "Empty file, skipping" file=path
+            continue
+        end
+        # Detect header: if first token is not a float, skip first line
+        first_parts = split(strip(lines[1]), ',')
+        start_idx = 1
+        if length(first_parts) >= 2 && tryparse(Float64, strip(first_parts[1])) === nothing
+            start_idx = 2
+        end
+        for i in start_idx:length(lines)
+            line = strip(lines[i])
+            isempty(line) && continue
+            parts = split(line, ',')
+            if length(parts) < 2
+                continue
+            end
+            a = tryparse(Float64, strip(parts[1]))
+            b = tryparse(Float64, strip(parts[2]))
+            if a === nothing || b === nothing
+                continue
+            end
+            push!(xs, a)
+            push!(ys, b)
+        end
+        if isempty(xs)
+            @warn "No numeric data found in file, skipping" file=path
+            continue
+        end
+
+        if x_ref === nothing
+            x_ref = copy(xs)
+            amp_matrix = reshape(collect(ys), :, 1)
+        else
+            vals = if length(xs) != length(x_ref) || any(abs.(xs .- x_ref) .> 1e-8)
+                _linear_interp(xs, ys, x_ref)
+            else
+                collect(ys)
+            end
+            amp_matrix = hcat(amp_matrix, collect(vals))
+        end
+    end
+
+    if x_ref === nothing
+        error("No numeric data found in any matching files for basename='$basename'")
+    end
+
+    mean_amp = vec(mean(amp_matrix, dims=2))
+
+    if isempty(out_filename)
+        out_filename = joinpath(dir, basename * "averaged.csv")
+    end
+
+    open(out_filename, "w") do io
+        println(io, "x_scaled,amplitude_mean")
+        for i in 1:length(x_ref)
+            println(io, "$(x_ref[i]),$(mean_amp[i])")
+        end
+    end
+
+    println("Wrote averaged data to $(out_filename) (averaged $(size(amp_matrix,2)) files)")
+    return out_filename
+end
+
 # -------------------- Entry point example --------------------
 function main()
     # Example: run two small PIII simulations; adjust N_soliton, nu, and trials as you like.
     nu = 3
-    for k in 0:1
-        println("Starting trial $(k) for PIII (nu=$(nu))")
-        random_PIII(100; nu=nu, trial=k, show_plot=false)
+    solitons = 150
+    for k in 0:9
+        println("Starting trial $(k+1) for PIII (nu=$(nu))")
+        random_PIII(solitons, nu=nu, trial=k, show_plot=false)
     end
 
     # Example PV run (commented out by default)
