@@ -309,7 +309,7 @@ function random_PIII(N_soliton::Int; nu::Int=3, trial::Int=0, show_plot::Bool=fa
     data = run_solver_loop(N_soliton, ks, "PIII", mu_piii_exact)
 
     filename = string(N_soliton, "SolitonsPIII_random_", lpad(string(trial), 5, '0'), ".csv")
-    writedlm(filename, [("x_scaled", "amplitude")]) # header-like row
+    writedlm(filename, [("x_scaled", "amplitude")], ',') # header-like row
     open(filename, "a") do io
         for (xv, av) in data
             println(io, "$(xv),$(av)")
@@ -336,7 +336,7 @@ function random_PV(N_soliton::Int; trial::Int=0, show_plot::Bool=false)
     data = run_solver_loop(N_soliton, ks, "PV", mu_pv_exact)
 
     filename = string(N_soliton, "SolitonsPV_random_", lpad(string(trial), 5, '0'), ".csv")
-    writedlm(filename, [("x_scaled", "amplitude")])
+    writedlm(filename, [("x_scaled", "amplitude")], ',')
     open(filename, "a") do io
         for (xv, av) in data
             println(io, "$(xv),$(av)")
@@ -443,9 +443,19 @@ function average_files_by_basename(basename::String; dir::AbstractString=".", ou
     write the result to `out_filename` (defaults to `joinpath(dir, basename * "averaged.csv")`).
     Returns the output filename."""
 
+    if isempty(out_filename)
+        out_filename = joinpath(dir, basename * "averaged.csv")
+    end
+
     files = sort(filter(f -> startswith(f, basename) && endswith(lowercase(f), ".csv"), readdir(dir)))
+
+    # Exclude the output file if present
+    # The variable `basename` shadows the function `Base.basename`.
+    out_base = Base.basename(out_filename)
+    filter!(f -> f != out_base, files)
+
     if isempty(files)
-        error("No files matching basename='$basename' in dir='$dir'")
+        error("No files matching basename='$basename' in dir='$dir' (excluding output file)")
     end
 
     x_ref = nothing
@@ -504,10 +514,6 @@ function average_files_by_basename(basename::String; dir::AbstractString=".", ou
     end
 
     mean_amp = vec(mean(amp_matrix, dims=2))
-
-    if isempty(out_filename)
-        out_filename = joinpath(dir, basename * "averaged.csv")
-    end
 
     open(out_filename, "w") do io
         println(io, "x_scaled,amplitude_mean")

@@ -853,7 +853,7 @@ uuid = "f50d1b31-88e8-58de-be2c-1cc44531875f"
 version = "0.5.1+0"
 
 [[deps.RogueWaveInfiniteNLS]]
-deps = ["LinearAlgebra", "OperatorApproximation", "Plots", "Polynomials", "Test"]
+deps = ["DelimitedFiles", "Distributions", "LinearAlgebra", "OperatorApproximation", "Plots", "Polynomials", "SpecialFunctions", "Test"]
 path = "."
 uuid = "deca77a3-49e2-4fa7-ba04-95ade2bf29f1"
 version = "0.1.4"
