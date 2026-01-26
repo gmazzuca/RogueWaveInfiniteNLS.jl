@@ -393,6 +393,163 @@ def _plot_averaged_vs_rhp():
 		plt.close()
 
 
+def _plot_averaged_vs_rhp_pv():
+	"""Plot RHP_PV.csv (dashed) against averaged soliton files (solid lines).
+	Also creates a log L2 difference plot.
+	"""
+	# Load RHP data from data/ directory
+	rhp_path = BASE_DIR.parent / "data" / "RHP_PV.csv"
+	try:
+		rhp_df = _load_df(rhp_path)
+	except Exception as e:
+		print(f"Failed to load RHP file: {e}")
+		return
+	
+	# Files to plot (in src/ directory)
+	averaged_files = [
+		"50solitonPV_AVERAGED.csv",
+		"100solitonPV_AVERAGED.csv",
+		"200solitonPV_AVERAGED.csv"
+	]
+	
+	# Load averaged data - use RHP's X column for all
+	data = {}
+	rhp_x = rhp_df["X"].values
+	rhp_y = rhp_df["PsiAbs"].values
+	
+	for fname in averaged_files:
+		csv_path = BASE_DIR / fname
+		try:
+			df = pd.read_csv(csv_path, header=None)
+			# Skip first column (string), use second column for PsiAbs
+			if df.shape[1] >= 2:
+				psi_vals = pd.to_numeric(df.iloc[:, 1], errors='coerce')
+				# Create DataFrame with RHP's X values
+				new_df = pd.DataFrame({
+					"X": rhp_x[:len(psi_vals)],
+					"PsiAbs": psi_vals.values
+				})
+				data[fname] = new_df.dropna()
+			else:
+				print(f"Skipping {fname}: insufficient columns")
+		except Exception as e:
+			print(f"Skipping {fname}: {e}")
+	
+	if not data:
+		print("No averaged files loaded successfully")
+		return
+	
+	# Main overlay plot
+	plt.figure(figsize=(10, 6))
+	
+	# Plot RHP with dashed line
+	plt.plot(rhp_x, rhp_y, label="RHP PV", color="black", linestyle="--", linewidth=2.5, alpha=0.9)
+	
+	# Plot averaged files with solid lines
+	colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # blue, orange, green
+	labels = ['50-soliton averaged', '100-soliton averaged', '200-soliton averaged']
+	
+	for idx, (fname, label) in enumerate(zip(averaged_files, labels)):
+		if fname in data:
+			df = data[fname]
+			plt.plot(df["X"], df["PsiAbs"], label=label, color=colors[idx], linewidth=2, alpha=0.7)
+	
+	plt.xlabel("X", fontsize=20)
+	plt.ylabel(r"$|\Psi|$", fontsize=20, labelpad=20, rotation=0)
+	plt.title(r"$\Psi_{V}(X,0)$ vs $\Psi_{N,V}(X,0)$", fontsize=25)
+	plt.xlim(-5, 5)
+	plt.legend(fontsize=16)
+	plt.tick_params(axis='both', which='major', labelsize=15)
+	plt.tight_layout()
+	plt.savefig(BASE_DIR / "RHP_PV_vs_Averaged.png")
+	plt.show()
+	plt.close()
+	
+	# Log L2 difference plot
+	plt.figure(figsize=(10, 6))
+	
+	# Prepare for L2 calculation
+	Ns = []
+	L2_vals = []
+	
+	rhp_order = np.argsort(rhp_x)
+	rhp_x_sorted = rhp_x[rhp_order]
+	rhp_y_sorted = rhp_y[rhp_order]
+	
+	for idx, (fname, label) in enumerate(zip(averaged_files, labels)):
+		if fname not in data:
+			continue
+		
+		df = data[fname]
+		sol_x = df["X"].values
+		sol_y = df["PsiAbs"].values
+		
+		# Interpolate RHP onto soliton X grid
+		try:
+			rhp_interp = np.interp(sol_x, rhp_x_sorted, rhp_y_sorted)
+		except Exception as e:
+			print(f"Interpolation failed for {fname}: {e}")
+			continue
+		
+		delta = np.abs(rhp_interp - sol_y)
+		
+		# Compute L2 norm
+		l2_sq = np.trapezoid(delta**2, sol_x)
+		l2 = np.sqrt(l2_sq)
+		
+		# Extract N from filename
+		N = int(fname.split('soliton')[0])
+		Ns.append(N)
+		L2_vals.append(l2)
+		
+		# Plot log difference
+		delta_safe = np.maximum(delta, np.finfo(float).tiny)
+		logdelta = np.log10(delta_safe)
+		plt.plot(sol_x, logdelta, label=label, color=colors[idx], linewidth=2, alpha=0.8)
+	
+	plt.xlabel("X", fontsize=20)
+	plt.ylabel(r"$\log_{10} |\Psi_{V}(X,0) - \Psi_{N,V}(X,0)|$", fontsize=20, labelpad=20)
+	plt.title("Log L2 Difference: RHP PV vs Averaged Solitons", fontsize=25)
+	plt.xlim(-5, 5)
+	plt.legend(fontsize=16)
+	plt.tick_params(axis='both', which='major', labelsize=15)
+	plt.tight_layout()
+	plt.savefig(BASE_DIR / "RHP_PV_vs_Averaged_diff_log.png")
+	plt.show()
+	plt.close()
+	
+	# Plot L2 norm vs N
+	if Ns:
+		order = np.argsort(Ns)
+		Ns_sorted = np.array(Ns)[order]
+		L2_sorted = np.array(L2_vals)[order]
+		
+		fig, ax = plt.subplots(figsize=(8, 5))
+		ax.semilogy(Ns_sorted, L2_sorted, marker='o', linestyle='-', linewidth=2, markersize=8)
+		ax.set_xlabel(r'Number of solitons ($N$)', fontsize=15)
+		ax.set_ylabel(r'$\left|\left|\Psi_{V} - \Psi_{N,V}\right|\right|_2$', fontsize=15, rotation=0)
+		ax.yaxis.set_label_coords(-0.15, 0.4)
+		ax.set_title(r'$L_2$ Difference: $\Psi_{V}(X,0)$ vs $\Psi_{N,V}(X,0)$', fontsize=25)
+		ax.set_xticks(Ns_sorted)
+		ax.set_xticklabels([str(int(n)) for n in Ns_sorted], fontsize=15)
+		
+		# Add more y-ticks at powers of 10
+		pos_vals = L2_sorted[L2_sorted > 0]
+		if pos_vals.size > 0:
+			kmin = int(np.floor(np.log10(pos_vals.min())))
+			kmax = int(np.ceil(np.log10(L2_sorted.max())))
+			yticks = 10.0 ** np.arange(kmin, kmax + 1)
+			ytick_labels = [f'$10^{{{k}}}$' for k in range(kmin, kmax + 1)]
+			ax.set_yticks(yticks)
+			ax.set_yticklabels(ytick_labels, fontsize=15)
+		
+		ax.grid(True, which='both', ls='--', alpha=0.4)
+		plt.tight_layout()
+		plt.savefig(BASE_DIR / "RHP_PV_vs_Averaged_L2.png")
+		plt.show()
+		plt.close()
+
+
 # # Plot all P-III related CSVs and produce difference plot
 # _plot_group("*PIII.csv", "RHP_PIII.csv", "RogueWaveSlice_PIII_T0.png", "Rogue Wave P-III at T=0", "RogueWaveSlice_PIII_diff_log.png", "Log difference: RHP vs P-III solitons at T=0")
 
@@ -401,4 +558,7 @@ def _plot_averaged_vs_rhp():
 
 # Plot RHP_PIII vs averaged soliton files
 _plot_averaged_vs_rhp()
+
+# Plot RHP_PV vs averaged soliton files
+_plot_averaged_vs_rhp_pv()
 
